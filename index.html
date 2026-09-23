@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoBe Camera Test</title>
+<style>
+  :root { --bg:#0f1318; --panel:#1a2029; --line:#2a323d; --text:#e9eef3; --dim:#8b97a4;
+          --ok:#3ecf8e; --bad:#ff6b6b; --warn:#f5b942; --btn:#2f6fe0; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--text);
+               font:18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding:16px; display:flex; flex-direction:column; gap:14px; }
+  h1 { font-size:26px; margin:0; }
+  h2 { font-size:20px; margin:0 0 8px; color:var(--dim); font-weight:600; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .stage { position:relative; background:#000; border-radius:10px; overflow:hidden; height:42vh; }
+  video { width:100%; height:100%; object-fit:contain; display:block; }
+  video.mirror { transform:scaleX(-1); }
+  #guide { position:absolute; border:3px dashed var(--warn); pointer-events:none; display:none; }
+  #guideLabel { position:absolute; left:8px; top:8px; background:#000a; padding:4px 8px;
+                border-radius:6px; font-size:15px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  button, select { font:inherit; font-size:20px; min-height:72px; padding:0 18px;
+                   border-radius:10px; border:0; color:#fff; background:var(--btn); flex:1 1 30%; }
+  button.alt { background:#3a4452; }
+  button:active { filter:brightness(1.3); }
+  select { background:#3a4452; flex:1 1 45%; }
+  label.chk { display:flex; gap:8px; align-items:center; font-size:18px; }
+  label.chk input { width:28px; height:28px; }
+  table { width:100%; border-collapse:collapse; font-size:16px; }
+  td { padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  td:first-child { color:var(--dim); width:42%; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  #shots { display:flex; gap:10px; }
+  #shots figure { margin:0; flex:1; }
+  #shots img { width:100%; max-height:30vh; object-fit:contain; background:#000; border-radius:8px; }
+  #shots figcaption { font-size:15px; color:var(--dim); }
+  #shots a { color:#8fb8ff; font-size:18px; }
+  #touchPad { height:120px; border:2px dashed var(--line); border-radius:10px;
+              display:flex; align-items:center; justify-content:center; color:var(--dim);
+              touch-action:none; user-select:none; text-align:center; }
+  #log { font:14px/1.35 ui-monospace, Menlo, Consolas, monospace; max-height:22vh; overflow-y:auto;
+         white-space:pre-wrap; }
+  textarea { width:100%; height:160px; font:13px ui-monospace, Menlo, Consolas, monospace;
+             background:#0b0e12; color:var(--text); border:1px solid var(--line); border-radius:8px; }
+</style>
+</head>
+<body>
+
+<h1>GoBe camera &amp; screen test</h1>
+
+<div class="stage">
+  <video id="video" class="mirror" playsinline muted autoplay></video>
+  <div id="guide"><span id="guideLabel">Portrait crop area</span></div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <select id="camSelect"><option value="">Default camera</option></select>
+    <select id="resSelect">
+      <option value="1920x1080">Ask for 1920 × 1080</option>
+      <option value="1080x1920">Ask for 1080 × 1920 (portrait)</option>
+      <option value="3840x2160">Ask for 3840 × 2160 (max test)</option>
+      <option value="1280x720">Ask for 1280 × 720</option>
+      <option value="640x480">Ask for 640 × 480</option>
+    </select>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button id="btnStart">Start camera</button>
+    <button id="btnShot">Take photo</button>
+    <button id="btnStop" class="alt">Stop camera</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button id="btnSweep" class="alt">Test all resolutions</button>
+    <button id="btnRestart" class="alt">Restart camera 10×</button>
+    <button id="btnNet" class="alt">Test internet</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <label class="chk"><input type="checkbox" id="chkMirror" checked> Mirror preview</label>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Last photo</h2>
+  <div id="shots"><span style="color:var(--dim)">No photo yet.</span></div>
+</div>
+
+<div class="panel">
+  <h2>Touch test — tap with one, two, three fingers</h2>
+  <div id="touchPad">Touch here</div>
+</div>
+
+<div class="panel">
+  <h2>Results</h2>
+  <table id="results"></table>
+</div>
+
+<div class="panel">
+  <h2>Log</h2>
+  <div id="log"></div>
+</div>
+
+<div class="panel">
+  <h2>Report (copy or save, then send it back)</h2>
+  <div class="row" style="margin-bottom:10px">
+    <button id="btnCopy" class="alt">Copy report</button>
+    <button id="btnSave" class="alt">Save report .txt</button>
+  </div>
+  <textarea id="reportText" readonly></textarea>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const video = $('video');
+  const results = {};              // key -> { value, status }
+  let stream = null;
+  let fpsTimer = null;
+
+  // ---------- small helpers ----------
+  function set(key, value, status = '') { results[key] = { value: String(value), status }; render(); }
+
+  function log(msg, level = '') {
+    const line = document.createElement('div');
+    if (level) line.className = level;
+    line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+    $('log').prepend(line);
+    console.log(msg);
+  }
+
+  function render() {
+    const rows = Object.entries(results).map(([k, r]) =>
+      `<tr><td>${k}</td><td class="${r.status}">${r.value.replace(/</g, '&lt;')}</td></tr>`);
+    $('results').innerHTML = rows.join('');
+    $('reportText').value =
+      'GoBe camera test report — ' + new Date().toISOString() + '\n\n' +
+      Object.entries(results).map(([k, r]) => `${k}: ${r.value}`).join('\n') +
+      '\n\n--- Log ---\n' + [...$('log').children].map(d => d.textContent).reverse().join('\n');
+  }
+
+  // Turn a camera error into a plain-English reason.
+  function explain(err) {
+    const reasons = {
+      NotAllowedError: 'Permission denied or camera blocked by the browser/kiosk settings.',
+      NotReadableError: 'Camera is busy or broken. Most likely the GoBe telepresence software is holding it.',
+      NotFoundError: 'No camera found.',
+      OverconstrainedError: 'Camera does not support the requested setting.',
+      SecurityError: 'Page is not allowed to use the camera (needs HTTPS or localhost).',
+      AbortError: 'Camera start was interrupted.',
+      TypeError: 'Camera API missing — page probably not on HTTPS/localhost.'
+    };
+    return `${err.name}: ${reasons[err.name] || err.message}`;
+  }
+
+  // ---------- 1. environment ----------
+  function envCheck() {
+    const dpr = window.devicePixelRatio || 1;
+    set('Browser', navigator.userAgent);
+    set('Page address', location.href.split('?')[0]);
+    set('Secure context (camera allowed)', isSecureContext ? 'yes' : 'NO — use https or localhost',
+        isSecureContext ? 'ok' : 'bad');
+    const hasApi = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    set('Camera API present', hasApi ? 'yes' : 'NO', hasApi ? 'ok' : 'bad');
+    set('Screen (CSS px)', `${screen.width} × ${screen.height}`);
+    set('Screen (real px)', `${Math.round(screen.width * dpr)} × ${Math.round(screen.height * dpr)}`);
+    set('Pixel ratio', dpr);
+    set('Window size', `${innerWidth} × ${innerHeight}`);
+    const portrait = innerHeight > innerWidth;
+    set('Orientation', (screen.orientation && screen.orientation.type) || (portrait ? 'portrait' : 'landscape'),
+        portrait ? 'ok' : 'warn');
+    set('Max touch points', navigator.maxTouchPoints || 0, navigator.maxTouchPoints > 0 ? 'ok' : 'bad');
+    set('Browser says online', navigator.onLine ? 'yes' : 'no', navigator.onLine ? 'ok' : 'warn');
+    set('CPU cores', navigator.hardwareConcurrency || 'unknown');
+    set('Memory (GB, approx)', navigator.deviceMemory || 'unknown');
+  }
+
+  // ---------- 2. cameras ----------
+  async function listCameras() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(d => d.kind === 'videoinput');
+    const sel = $('camSelect');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Default camera</option>' +
+      cams.map((c, i) => `<option value="${c.deviceId}">${c.label || 'Camera ' + (i + 1)}</option>`).join('');
+    sel.value = current;
+    set('Cameras found', cams.length + (cams.length ? ' — ' + cams.map(c => c.label || '(name hidden until allowed)').join(' | ') : ''),
+        cams.length ? 'ok' : 'bad');
+  }
+
+  function stopCamera(quiet) {
+    if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    video.srcObject = null;
+    $('guide').style.display = 'none';
+    if (!quiet) { set('Camera state', 'stopped'); log('Camera stopped'); }
+  }
+
+  async function startCamera(resOverride, quiet) {
+    stopCamera(true);
+    const [w, h] = (resOverride || $('resSelect').value).split('x').map(Number);
+    const deviceId = $('camSelect').value;
+    const constraints = {
+      audio: false,
+      video: { width: { ideal: w }, height: { ideal: h }, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) }
+    };
+    const t0 = performance.now();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      const msg = explain(err);
+      set('Camera state', 'FAILED — ' + msg, 'bad');
+      log('Camera start failed: ' + msg, 'bad');
+      return null;
+    }
+    video.srcObject = stream;
+    await video.play().catch(() => {});
+    await new Promise(r => video.readyState >= 2 ? r() : video.addEventListener('loadeddata', r, { once: true }));
+    const ms = Math.round(performance.now() - t0);
+
+    const track = stream.getVideoTracks()[0];
+    track.addEventListener('ended', () => {
+      set('Camera state', 'TAKEN AWAY while running (track ended)', 'bad');
+      log('Camera track ended by the system — did a telepresence call start?', 'bad');
+    });
+    const s = track.getSettings();
+    const info = { asked: `${w}×${h}`, got: `${video.videoWidth}×${video.videoHeight}`, fps: s.frameRate, ms };
+
+    if (!quiet) {
+      set('Camera state', 'running', 'ok');
+      set('Camera name', track.label || 'unknown');
+      set('Asked for', `${w} × ${h}`);
+      set('Got', `${video.videoWidth} × ${video.videoHeight}`,
+          video.videoWidth * video.videoHeight >= 1920 * 1080 ? 'ok' : 'warn');
+      set('Frame rate (camera says)', s.frameRate ? s.frameRate.toFixed(1) : 'unknown');
+      set('Time to first frame', ms + ' ms', ms < 2000 ? 'ok' : 'warn');
+      if (track.getCapabilities) {
+        const c = track.getCapabilities();
+        if (c.width && c.height) set('Max camera resolution', `${c.width.max} × ${c.height.max}`);
+        if (c.frameRate) set('Frame rate range', `${c.frameRate.min ?? '?'} – ${c.frameRate.max ?? '?'}`);
+        set('Camera controls available', Object.keys(c).join(', '));
+      }
+      portraitMath();
+      measureFps();
+      drawGuide();
+      listCameras();   // labels become visible after permission
+      log(`Camera started: asked ${info.asked}, got ${info.got}, ${ms} ms`, 'ok');
+    }
+    return info;
+  }
+
+  // How many real pixels a 9:16 portrait photo would have.
+  function portraitMath() {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    let cw, ch;
+    if (vw / vh > 9 / 16) { ch = vh; cw = Math.round(vh * 9 / 16); }
+    else { cw = vw; ch = Math.round(vw * 16 / 9); }
+    const pct = Math.round((cw * ch) / (1080 * 1920) * 100);
+    set('Portrait photo real pixels', `${cw} × ${ch} (${pct}% of a 1080 × 1920 frame)`,
+        pct >= 90 ? 'ok' : pct >= 50 ? 'warn' : 'bad');
+  }
+
+  // Count actual frames arriving, over 2-second windows.
+  function measureFps() {
+    let frames = 0;
+    const tick = () => { frames++; if (stream) cb(); };
+    const cb = video.requestVideoFrameCallback
+      ? () => video.requestVideoFrameCallback(tick)
+      : (() => { let last = -1; return () => requestAnimationFrame(() => {
+          if (video.currentTime !== last) { last = video.currentTime; frames++; }
+          if (stream) cb(); }); })();
+    cb();
+    fpsTimer = setInterval(() => {
+      const fps = frames / 2; frames = 0;
+      set('Frame rate (measured)', fps.toFixed(1) + ' fps', fps >= 24 ? 'ok' : fps >= 15 ? 'warn' : 'bad');
+    }, 2000);
+  }
+
+  // Yellow dashed box = the part of the camera image a portrait photo would use.
+  function drawGuide() {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw) return;
+    const box = video.getBoundingClientRect();
+    const scale = Math.min(box.width / vw, box.height / vh);
+    const dw = vw * scale, dh = vh * scale;
+    let gw, gh;
+    if (vw / vh > 9 / 16) { gh = dh; gw = dh * 9 / 16; } else { gw = dw; gh = dw * 16 / 9; }
+    const g = $('guide');
+    g.style.width = gw + 'px'; g.style.height = gh + 'px';
+    g.style.left = (box.width - gw) / 2 + 'px'; g.style.top = (box.height - gh) / 2 + 'px';
+    g.style.display = 'block';
+  }
+
+  // ---------- 3. take photo ----------
+  function takePhoto() {
+    if (!stream) { log('Start the camera first', 'warn'); return; }
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const mirror = $('chkMirror').checked;
+
+    // Full raw frame, exactly what the camera sent.
+    const full = document.createElement('canvas');
+    full.width = vw; full.height = vh;
+    full.getContext('2d').drawImage(video, 0, 0);
+
+    // Portrait crop, stretched to 1080×1920 — shows how soft the final photo would be.
+    let cw, ch;
+    if (vw / vh > 9 / 16) { ch = vh; cw = Math.round(vh * 9 / 16); } else { cw = vw; ch = Math.round(vw * 16 / 9); }
+    const crop = document.createElement('canvas');
+    crop.width = 1080; crop.height = 1920;
+    const cx = crop.getContext('2d');
+    if (mirror) { cx.translate(1080, 0); cx.scale(-1, 1); }
+    cx.drawImage(video, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, 1080, 1920);
+
+    const t0 = performance.now();
+    Promise.all([toBlob(full), toBlob(crop)]).then(([bFull, bCrop]) => {
+      const ms = Math.round(performance.now() - t0);
+      $('shots').innerHTML = '';
+      $('shots').append(figure(bFull, `Raw ${vw}×${vh}`, 'gobe-raw.jpg'),
+                        figure(bCrop, `Portrait 1080×1920${mirror ? ' (mirrored)' : ''}`, 'gobe-portrait.jpg'));
+      set('Photo capture', `ok — raw ${kb(bFull)} KB, portrait ${kb(bCrop)} KB, encode ${ms} ms`, 'ok');
+      log(`Photo taken (${vw}×${vh})`, 'ok');
+    }).catch(e => { set('Photo capture', 'FAILED — ' + e.message, 'bad'); log('Capture failed: ' + e.message, 'bad'); });
+  }
+
+  const toBlob = c => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('toBlob returned nothing')), 'image/jpeg', 0.92));
+  const kb = b => Math.round(b.size / 1024);
+
+  function figure(blob, caption, filename) {
+    const url = URL.createObjectURL(blob);
+    const f = document.createElement('figure');
+    f.innerHTML = `<img src="${url}" alt=""><figcaption>${caption}</figcaption>
+                   <a href="${url}" download="${filename}">Save</a> &nbsp; <a href="${url}" target="_blank">Open full size</a>`;
+    return f;
+  }
+
+  // ---------- 4. resolution sweep ----------
+  async function sweep() {
+    const list = ['640x480', '1280x720', '1920x1080', '1080x1920', '2560x1440', '3840x2160'];
+    log('Resolution sweep started…');
+    const out = [];
+    for (const r of list) {
+      const info = await startCamera(r, true);
+      out.push(info ? `${r} → ${info.got}` : `${r} → failed`);
+      stopCamera(true);
+    }
+    set('Resolution sweep', out.join(' | '));
+    log('Resolution sweep done', 'ok');
+    startCamera();
+  }
+
+  // ---------- 5. restart stress test (does the camera release cleanly?) ----------
+  async function restartTest() {
+    log('Restart test: 10 × stop/start…');
+    let ok = 0; const times = [];
+    for (let i = 0; i < 10; i++) {
+      stopCamera(true);
+      await new Promise(r => setTimeout(r, 300));
+      const info = await startCamera(null, true);
+      if (info) { ok++; times.push(info.ms); }
+    }
+    const avg = times.length ? Math.round(times.reduce((a, b) => a + b) / times.length) : '-';
+    set('Restart test', `${ok}/10 ok, average start ${avg} ms`, ok === 10 ? 'ok' : 'bad');
+    log(`Restart test done: ${ok}/10`, ok === 10 ? 'ok' : 'bad');
+    stopCamera(true);
+    startCamera();
+  }
+
+  // ---------- 6. internet ----------
+  async function netTest() {
+    const targets = ['https://www.gstatic.com/generate_204', 'https://cloudflare.com/cdn-cgi/trace'];
+    for (const url of targets) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const t0 = performance.now();
+      try {
+        await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal });
+        const ms = Math.round(performance.now() - t0);
+        set('Internet: ' + new URL(url).host, `reachable, ${ms} ms`, ms < 800 ? 'ok' : 'warn');
+      } catch (e) {
+        set('Internet: ' + new URL(url).host, 'NOT reachable (' + (e.name === 'AbortError' ? 'timeout' : e.message) + ')', 'bad');
+      } finally { clearTimeout(timer); }
+    }
+    log('Internet test done');
+  }
+
+  // ---------- 7. touch ----------
+  let maxFingers = 0;
+  const pad = $('touchPad');
+  pad.addEventListener('touchstart', e => {
+    e.preventDefault();
+    maxFingers = Math.max(maxFingers, e.touches.length);
+    const t = e.touches[0];
+    pad.textContent = `${e.touches.length} finger(s) — at ${Math.round(t.clientX)}, ${Math.round(t.clientY)}`;
+    set('Touch events', `working, most fingers at once: ${maxFingers}`, 'ok');
+  }, { passive: false });
+  pad.addEventListener('mousedown', e => {
+    if (!results['Touch events']) set('Touch events', 'only mouse/click events seen so far', 'warn');
+    pad.textContent = `Click at ${e.clientX}, ${e.clientY}`;
+  });
+
+  // ---------- 8. report ----------
+  $('btnCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText($('reportText').value); log('Report copied', 'ok'); }
+    catch { $('reportText').select(); document.execCommand && document.execCommand('copy'); log('Copy may have failed — take a photo of the screen instead', 'warn'); }
+  };
+  $('btnSave').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([$('reportText').value], { type: 'text/plain' }));
+    a.download = 'gobe-test-report.txt'; a.click();
+  };
+
+  // ---------- wiring ----------
+  $('btnStart').onclick = () => startCamera();
+  $('btnStop').onclick = () => stopCamera();
+  $('btnShot').onclick = takePhoto;
+  $('btnSweep').onclick = sweep;
+  $('btnRestart').onclick = restartTest;
+  $('btnNet').onclick = netTest;
+  $('chkMirror').onchange = e => video.classList.toggle('mirror', e.target.checked);
+  $('camSelect').onchange = () => stream && startCamera();
+  $('resSelect').onchange = () => stream && startCamera();
+  addEventListener('resize', () => { drawGuide(); set('Window size', `${innerWidth} × ${innerHeight}`); });
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => { log('Camera list changed'); listCameras(); });
+  addEventListener('error', e => log('Page error: ' + e.message, 'bad'));
+
+  envCheck();
+  listCameras();
+  log('Page loaded. Tap "Start camera".');
+})();
+</script>
+</body>
+</html>
