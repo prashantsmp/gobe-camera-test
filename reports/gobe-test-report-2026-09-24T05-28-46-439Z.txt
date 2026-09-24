@@ -1,0 +1,19 @@
+GoBe camera test report — 2026-09-24T05:28:40.089Z
+
+Browser: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15
+Page address: https://prashantsmp.github.io/gobe-camera-test/
+Secure context (camera allowed): yes
+Camera API present: yes
+Screen (CSS px): 1512 × 982
+Screen (real px): 3024 × 1964
+Pixel ratio: 2
+Window size: 1460 × 784
+Orientation: landscape-primary
+Max touch points: 0
+Browser says online: yes
+CPU cores: 8
+Memory (GB, approx): unknown
+Cameras found: 1 — (name hidden until allowed)
+
+--- Log ---
+9:28:40 AM  Page loaded. Tap "Start camera".
