@@ -1,10 +1,9 @@
 # GoBe Camera Test
 
-A single-page browser diagnostic that checks the camera, screen, touch input and internet connection on a GoBe device. The tester opens the page on the device, runs the tests, saves a text report and uploads it to GitHub.
+A single-page browser diagnostic that checks the camera, screen, touch input and internet connection on a GoBe device. The tester opens the page on the device, runs the tests, and copies or saves a text report to send back.
 
 - **Live page:** https://prashantsmp.github.io/gobe-camera-test/
 - **Repo:** https://github.com/prashantsmp/gobe-camera-test (public; GitHub Pages serves `main` from `/`)
-- **Uploaded reports:** https://github.com/prashantsmp/gobe-camera-test/tree/main/reports
 
 ## Stack deviation (intentional)
 
@@ -20,34 +19,32 @@ Keep it as a single file unless the user explicitly asks to change the approach.
 |---|---|---|
 | This folder (local, **not** a git repo) | `gobe-camera-test.html` | Source of truth for editing |
 | GitHub repo | `index.html` | A copy of `gobe-camera-test.html` |
-| GitHub repo | `reports/README.md` | Placeholder file. GitHub needs at least one file in a folder before its upload page will open there |
-| GitHub repo | `reports/*.txt` | Uploaded test reports |
+| GitHub repo | `reports/` | Left over from the removed upload feature; holds one earlier test report |
 
-## Page structure (`gobe-camera-test.html`, ~440 lines)
+## Page structure (`gobe-camera-test.html`, ~437 lines)
 
 The UI panels are Camera controls, Last photo, Touch test, Results, Log and Report. Large buttons (72px tall) make the page easy to use on a touch screen, and the styling is a dark theme.
 
 The script sections are marked with `// ---------- N. name ----------` comments:
 
 1. **environment:** browser and screen information
-2. **cameras:** list the cameras, then start and stop one (resolution picker, mirror toggle)
+2. **cameras:** list the cameras, then start and stop one (resolution picker including 1600×1200, 1440×1920 portrait and 2592×1944 sensor max; mirror toggle)
 3. **take photo:** full-frame and cropped JPEG captures, each with Save and Open links
-4. **resolution sweep:** tries each resolution in turn
+4. **resolution sweep:** tries each resolution in turn, from 640×480 up to 3840×2160
 5. **restart stress test:** restarts the camera 10 times to check that it releases cleanly
 6. **internet:** `no-cors` fetches to `gstatic.com/generate_204` and `cloudflare.com/cdn-cgi/trace`, with a 6-second timeout
 7. **touch:** multi-finger tap pad
-8. **report:** Copy report, Save report .txt (the filename is timestamped, e.g. `gobe-test-report-<ISO>.txt`), Upload report and View uploaded reports
+8. **report:** Copy report, and Save report .txt (saves `gobe-test-report.txt`)
 
-## Report upload flow
+## Reports
 
-**Upload report** is a plain link to `https://github.com/prashantsmp/gobe-camera-test/upload/main/reports`, which is GitHub's own upload page. The tester chooses the saved `.txt` file and taps **Commit changes**. This requires a GitHub login with write access to the repo.
+The page has no upload feature; the tester copies or saves the report and sends it back by hand. An in-page GitHub upload button was added on 2026-09-24 and then removed the same day at the user's request.
 
 - **No tokens:** never put a GitHub token in the page. The page is public, so anyone could read the token and use it to write to the repo.
-- **If testers without GitHub access need to upload,** the agreed alternatives are:
-  - a fine-grained token (write access to this repo's contents only) that each tester enters once and that is stored in `localStorage`;
+- **If uploading is wanted again,** ask the user first. The options considered were:
+  - a link to GitHub's own upload page (needs a GitHub login with write access to the repo);
+  - a fine-grained token that each tester enters once and that is stored in `localStorage`;
   - a Cloudflare Worker relay that holds the token.
-
-  Ask the user before building either one.
 
 ## Deploying a change
 
@@ -59,7 +56,7 @@ The script sections are marked with `// ---------- N. name ----------` comments:
    # commit, then push
    ```
    The scratchpad is cleared between sessions, so clone fresh each time.
-3. GitHub Pages rebuilds in about a minute. To check that the change is live, run `curl` against the live page with a cache-busting query string (for example `?v=1`) and grep for the new markup.
+3. GitHub Pages rebuilds in about a minute. The robot's browser caches the old page, so tell the user to hard-refresh it (Ctrl+Shift+R). To check that the change is live, run `curl` against the live page with a cache-busting query string (for example `?v=1`) and grep for the new markup.
 4. Keep the local file and the repo's `index.html` identical.
 
 ## Conventions
